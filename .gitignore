@@ -1,0 +1,20 @@
+# Dependências e build
+node_modules/
+dist/
+coverage/
+
+# Ambiente e segredos (NUNCA commitar)
+.env
+.env.*
+!.env.example
+deploy/terraform/terraform.tfvars
+deploy/terraform/.terraform/
+deploy/terraform/*.tfstate
+deploy/terraform/*.tfstate.*
+
+# Prisma client gerado
+prisma/generated/
+
+# Sistema
+.DS_Store
+*.log

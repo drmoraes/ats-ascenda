@@ -1,0 +1,382 @@
+// ATS ASCENDA — Sprint 1: Modelagem do Banco de Dados
+// PostgreSQL 16 + pgvector + Row-Level Security (multitenant B2B SaaS)
+//
+// Convenções:
+//  - Toda entidade de negócio carrega `tenantId` (isolamento por RLS).
+//  - PII sensível (LGPD) fica isolada em CandidateSensitiveData, cifrada em nível de campo.
+//  - Exclusão lógica via `deletedAt`; anonimização via `anonymizedAt`.
+//  - Timestamps padronizados: createdAt / updatedAt.
+
+generator client {
+  provider        = "prisma-client-js"
+  binaryTargets   = ["native", "debian-openssl-3.0.x"]
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgcrypto, vector]
+}
+
+// ============================================================
+// TENANCY & IDENTITY
+// ============================================================
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  CANCELLED
+}
+
+model Tenant {
+  id        String       @id @default(uuid()) @db.Uuid
+  name      String       @db.VarChar(200)
+  slug      String       @unique @db.VarChar(120)
+  status    TenantStatus @default(ACTIVE)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  users        User[]
+  candidates   Candidate[]
+  jobs         Job[]
+  pipelines    Pipeline[]
+  applications Application[]
+  consents     Consent[]
+  auditLogs    AuditLog[]
+
+  @@map("tenants")
+}
+
+enum UserRole {
+  SUPERADMIN
+  TENANT_ADMIN
+  RECRUITER
+  HIRING_MANAGER
+  CANDIDATE
+}
+
+enum UserStatus {
+  ACTIVE
+  INVITED
+  DISABLED
+}
+
+model User {
+  id           String     @id @default(uuid()) @db.Uuid
+  tenantId     String     @db.Uuid
+  email        String     @db.VarChar(320)
+  fullName     String     @db.VarChar(200)
+  role         UserRole
+  status       UserStatus @default(INVITED)
+  passwordHash String?    @db.VarChar(255) // Argon2id; null quando SSO/OIDC
+  lastLoginAt  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  deletedAt    DateTime?
+
+  tenant             Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  jobsOwned          Job[]         @relation("JobOwner")
+  stageMovesActed    StageHistory[] @relation("StageActor")
+
+  @@unique([tenantId, email])
+  @@index([tenantId, role])
+  @@map("users")
+}
+
+// ============================================================
+// CANDIDATES (PII segregada)
+// ============================================================
+
+enum CandidateStatus {
+  ACTIVE
+  BLOCKED
+  ANONYMIZED
+}
+
+model Candidate {
+  id          String          @id @default(uuid()) @db.Uuid
+  tenantId    String          @db.Uuid
+  fullName    String          @db.VarChar(200)
+  email       String          @db.VarChar(320)
+  phone       String?         @db.VarChar(30) // usado p/ WhatsApp
+  status      CandidateStatus @default(ACTIVE)
+  source      String?         @db.VarChar(80) // canal de atração (ROI)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  deletedAt   DateTime?       // exclusão lógica
+  anonymizedAt DateTime?      // marca de anonimização LGPD
+
+  tenant        Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sensitiveData CandidateSensitiveData?
+  resumes       Resume[]
+  applications  Application[]
+  consents      Consent[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId, status])
+  @@map("candidates")
+}
+
+enum EthnicitySelfDeclared {
+  BRANCA
+  PRETA
+  PARDA
+  AMARELA
+  INDIGENA
+  NAO_DECLARADO
+}
+
+enum GenderSelfDeclared {
+  MULHER
+  HOMEM
+  NAO_BINARIO
+  OUTRO
+  NAO_DECLARADO
+}
+
+/// Dados sensíveis LGPD. Campos cifrados em nível de aplicação (KMS/pgcrypto).
+/// NUNCA utilizados no vetor de scoring — apenas em analytics agregado.
+model CandidateSensitiveData {
+  id            String                @id @default(uuid()) @db.Uuid
+  tenantId      String                @db.Uuid
+  candidateId   String                @unique @db.Uuid
+  ethnicity     EthnicitySelfDeclared @default(NAO_DECLARADO)
+  gender        GenderSelfDeclared    @default(NAO_DECLARADO)
+  hasDisability Boolean?              // PCD (autodeclarado)
+  birthDate     DateTime?             @db.Date
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  candidate Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("candidate_sensitive_data")
+}
+
+enum ResumeParseStatus {
+  PENDING
+  PROCESSING
+  PARSED
+  FAILED
+}
+
+/// Currículo enviado + resultado do parseamento (JSON estruturado).
+model Resume {
+  id           String            @id @default(uuid()) @db.Uuid
+  tenantId     String            @db.Uuid
+  candidateId  String            @db.Uuid
+  storageKey   String            @db.VarChar(500) // chave no S3
+  mimeType     String            @db.VarChar(120)
+  parseStatus  ResumeParseStatus @default(PENDING)
+  parsedData   Json?             // schema validado por Zod na aplicação
+  parseError   String?           @db.Text
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  candidate Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, candidateId])
+  @@index([tenantId, parseStatus])
+  @@map("resumes")
+}
+
+// ============================================================
+// JOBS & PIPELINE (funil)
+// ============================================================
+
+enum JobStatus {
+  DRAFT
+  OPEN
+  ON_HOLD
+  CLOSED
+  CANCELLED
+}
+
+enum EmploymentType {
+  CLT
+  PJ
+  ESTAGIO
+  TEMPORARIO
+}
+
+enum WorkModel {
+  PRESENCIAL
+  HIBRIDO
+  REMOTO
+}
+
+model Job {
+  id             String         @id @default(uuid()) @db.Uuid
+  tenantId       String         @db.Uuid
+  title          String         @db.VarChar(200)
+  description    String         @db.Text
+  department     String?        @db.VarChar(120)
+  location       String?        @db.VarChar(160)
+  status         JobStatus      @default(DRAFT)
+  employmentType EmploymentType @default(CLT)
+  workModel      WorkModel      @default(PRESENCIAL)
+  ownerId        String?        @db.Uuid
+  openedAt       DateTime?      // início da contagem de SLA
+  closedAt       DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  deletedAt      DateTime?
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  owner        User?         @relation("JobOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  pipeline     Pipeline?
+  applications Application[]
+
+  @@index([tenantId, status])
+  @@map("jobs")
+}
+
+/// Funil de uma vaga. Composto por estágios ordenados.
+model Pipeline {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @db.Uuid
+  jobId     String   @unique @db.Uuid
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  job    Job             @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  stages PipelineStage[]
+
+  @@index([tenantId])
+  @@map("pipelines")
+}
+
+model PipelineStage {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String   @db.Uuid
+  pipelineId String   @db.Uuid
+  name       String   @db.VarChar(120)
+  position   Int      // ordem no Kanban
+  isTerminal Boolean  @default(false) // ex.: Contratado / Reprovado
+  createdAt  DateTime @default(now())
+
+  pipeline     Pipeline       @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  applications Application[]
+  stageHistory StageHistory[]
+
+  @@unique([pipelineId, position])
+  @@index([tenantId, pipelineId])
+  @@map("pipeline_stages")
+}
+
+// ============================================================
+// APPLICATIONS (candidatura = candidato x vaga)
+// ============================================================
+
+enum ApplicationStatus {
+  IN_PROGRESS
+  HIRED
+  REJECTED
+  WITHDRAWN
+}
+
+model Application {
+  id             String            @id @default(uuid()) @db.Uuid
+  tenantId       String            @db.Uuid
+  jobId          String            @db.Uuid
+  candidateId    String            @db.Uuid
+  currentStageId String?           @db.Uuid
+  status         ApplicationStatus @default(IN_PROGRESS)
+  matchScore     Float?            // score preditivo (0..1), calculado no Sprint 4
+  appliedAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  job          Job            @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  candidate    Candidate      @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  currentStage PipelineStage? @relation(fields: [currentStageId], references: [id], onDelete: SetNull)
+  stageHistory StageHistory[]
+
+  @@unique([jobId, candidateId]) // um candidato aplica uma vez por vaga
+  @@index([tenantId, status])
+  @@index([tenantId, jobId, currentStageId])
+  @@map("applications")
+}
+
+/// Histórico imutável de movimentações no funil (auditoria + métricas de SLA).
+model StageHistory {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @db.Uuid
+  applicationId String   @db.Uuid
+  stageId       String   @db.Uuid
+  actorId       String?  @db.Uuid
+  note          String?  @db.Text
+  enteredAt     DateTime @default(now())
+
+  application Application   @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  stage       PipelineStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  actor       User?         @relation("StageActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, applicationId])
+  @@map("stage_history")
+}
+
+// ============================================================
+// LGPD: CONSENT & AUDIT
+// ============================================================
+
+enum ConsentPurpose {
+  RECRUITMENT_PROCESS
+  TALENT_POOL
+  MARKETING_COMMUNICATION
+}
+
+enum LegalBasis {
+  CONSENT
+  LEGITIMATE_INTEREST
+  LEGAL_OBLIGATION
+}
+
+model Consent {
+  id           String         @id @default(uuid()) @db.Uuid
+  tenantId     String         @db.Uuid
+  candidateId  String         @db.Uuid
+  purpose      ConsentPurpose
+  legalBasis   LegalBasis     @default(CONSENT)
+  termsVersion String         @db.VarChar(40)
+  granted      Boolean
+  grantedAt    DateTime       @default(now())
+  revokedAt    DateTime?
+  ipAddress    String?        @db.VarChar(64)
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  candidate Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, candidateId, purpose])
+  @@map("consents")
+}
+
+enum AuditAction {
+  CREATE
+  READ
+  UPDATE
+  DELETE
+  ANONYMIZE
+  EXPORT
+}
+
+/// Log imutável de acesso/alteração a dados sensíveis (append-only via RLS).
+model AuditLog {
+  id         String      @id @default(uuid()) @db.Uuid
+  tenantId   String      @db.Uuid
+  actorId    String?     @db.Uuid
+  action     AuditAction
+  entity     String      @db.VarChar(80) // ex.: "CandidateSensitiveData"
+  entityId   String?     @db.Uuid
+  metadata   Json?
+  ipAddress  String?     @db.VarChar(64)
+  createdAt  DateTime    @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, entity, entityId])
+  @@index([tenantId, createdAt])
+  @@map("audit_logs")
+}

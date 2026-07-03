@@ -1,0 +1,89 @@
+# Render Blueprint — ATS ASCENDA (demo online, free tier).
+# Cria: Postgres, Redis (Key Value), a API e o Keycloak.
+# Veja deploy/render/README.md para o passo a passo e as limitações do free tier.
+
+databases:
+  - name: ats-postgres
+    databaseName: ats
+    plan: free
+    postgresMajorVersion: "16"
+
+services:
+  # --- Fila/cache (Redis / Key Value) ---
+  - type: keyvalue
+    name: ats-redis
+    plan: free
+    ipAllowList: []
+    maxmemoryPolicy: noeviction
+
+  # --- API (NestJS via Docker) ---
+  - type: web
+    name: ats-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: sh ./docker/entrypoint.render.sh
+    healthCheckPath: /health/live
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ats-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: ats-redis
+          property: connectionString
+      - key: CANDIDATE_JWT_SECRET
+        generateValue: true
+      # IA: placeholder para o boot passar; troque por uma chave real p/ parsing.
+      - key: AI_PARSER_API_BASE_URL
+        value: https://api.anthropic.com/v1
+      - key: AI_PARSER_MODEL
+        value: claude-sonnet-5
+      - key: AI_PARSER_API_KEY
+        value: changeme-set-a-real-key
+      # S3: sem storage no free tier — valores dummy só para o boot/URL assinada.
+      - key: AWS_REGION
+        value: us-east-1
+      - key: S3_RESUMES_BUCKET
+        value: demo-bucket
+      - key: AWS_ACCESS_KEY_ID
+        value: demo
+      - key: AWS_SECRET_ACCESS_KEY
+        value: demo
+      # Keycloak: placeholders válidos p/ o boot. APÓS o 1º deploy, troque pela
+      # URL real do serviço ats-keycloak e faça redeploy da API.
+      - key: KEYCLOAK_AUDIENCE
+        value: ats-backend
+      - key: KEYCLOAK_ISSUER
+        value: https://ats-keycloak.onrender.com/realms/ats
+      - key: KEYCLOAK_JWKS_URL
+        value: https://ats-keycloak.onrender.com/realms/ats/protocol/openid-connect/certs
+
+  # --- Keycloak (autenticação do recrutador) ---
+  # ATENÇÃO: Keycloak é pesado para 512MB (free). Pode reiniciar/OOM; se isso
+  # ocorrer, suba este serviço para um plano pago (o resto pode ficar no free).
+  - type: web
+    name: ats-keycloak
+    runtime: docker
+    plan: free
+    dockerfilePath: deploy/render/keycloak.Dockerfile
+    dockerContext: .
+    healthCheckPath: /realms/ats
+    envVars:
+      - key: KEYCLOAK_ADMIN
+        value: admin
+      - key: KEYCLOAK_ADMIN_PASSWORD
+        generateValue: true
+      - key: KC_HTTP_ENABLED
+        value: "true"
+      - key: KC_HOSTNAME_STRICT
+        value: "false"
+      - key: KC_PROXY_HEADERS
+        value: xforwarded
+      - key: JAVA_OPTS_APPEND
+        value: "-Xms64m -Xmx320m"

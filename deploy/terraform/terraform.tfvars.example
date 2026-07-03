@@ -1,0 +1,26 @@
+# Copie para terraform.tfvars e ajuste. NUNCA commite o terraform.tfvars real.
+
+aws_region  = "sa-east-1"
+environment = "prod"
+
+# Preencha após o primeiro push da imagem ao ECR:
+api_image = ""
+
+# Keycloak (rode como serviço separado e aponte aqui):
+keycloak_issuer   = "https://auth.seudominio.com/realms/ats"
+keycloak_jwks_url = "https://auth.seudominio.com/realms/ats/protocol/openid-connect/certs"
+keycloak_audience = "ats-backend"
+
+# HTTPS: crie um certificado no ACM e cole o ARN (recomendado antes do go-live):
+certificate_arn = ""
+
+# Deploy via GitHub Actions (OIDC), opcional:
+github_repository = "sua-org/ats-ascenda"
+
+# CORS (domínios do front que consomem a API):
+cors_allowed_origins = "https://app.seudominio.com"
+
+# Escala/custo:
+db_instance_class = "db.t4g.micro"
+db_multi_az       = false
+api_desired_count = 2
