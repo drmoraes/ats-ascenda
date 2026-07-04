@@ -3,90 +3,12 @@ import { readAccessToken } from '@/lib/session';
 import {
   fetchRecruiterJobs,
   RecruiterApiError,
-  type JobStatus,
   type RecruiterJob,
 } from '@/lib/recruiter-api';
 import { LogoutButton } from '@/components/logout-button';
+import { RecruiterJobsView } from '@/components/recruiter-jobs-view';
 
 export const dynamic = 'force-dynamic';
-
-const STATUS_LABEL: Record<JobStatus, string> = {
-  DRAFT: 'Rascunho',
-  OPEN: 'Aberta',
-  ON_HOLD: 'Em espera',
-  CLOSED: 'Encerrada',
-  CANCELLED: 'Cancelada',
-};
-
-const STATUS_STYLE: Record<JobStatus, string> = {
-  DRAFT: 'bg-slate-100 text-slate-600 ring-slate-500/20',
-  OPEN: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
-  ON_HOLD: 'bg-amber-50 text-amber-700 ring-amber-600/20',
-  CLOSED: 'bg-slate-200 text-slate-700 ring-slate-500/20',
-  CANCELLED: 'bg-red-50 text-red-700 ring-red-600/20',
-};
-
-function StatusBadge({ status }: { readonly status: JobStatus }): JSX.Element {
-  return (
-    <span
-      className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${STATUS_STYLE[status]}`}
-    >
-      {STATUS_LABEL[status]}
-    </span>
-  );
-}
-
-function JobsTable({
-  jobs,
-}: {
-  readonly jobs: readonly RecruiterJob[];
-}): JSX.Element {
-  if (jobs.length === 0) {
-    return (
-      <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center">
-        <p className="text-base font-semibold text-slate-700">
-          Nenhuma vaga cadastrada
-        </p>
-        <p className="mt-1 text-sm text-slate-500">
-          As vagas criadas aparecerão aqui.
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card">
-      <table className="w-full text-left text-sm">
-        <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
-          <tr>
-            <th className="px-5 py-3 font-medium">Vaga</th>
-            <th className="hidden px-5 py-3 font-medium sm:table-cell">Área</th>
-            <th className="hidden px-5 py-3 font-medium sm:table-cell">Local</th>
-            <th className="px-5 py-3 font-medium">Status</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {jobs.map((job) => (
-            <tr key={job.id} className="transition hover:bg-slate-50/60">
-              <td className="px-5 py-3.5 font-medium text-slate-800">
-                {job.title}
-              </td>
-              <td className="hidden px-5 py-3.5 text-slate-500 sm:table-cell">
-                {job.department ?? '—'}
-              </td>
-              <td className="hidden px-5 py-3.5 text-slate-500 sm:table-cell">
-                {job.location ?? '—'}
-              </td>
-              <td className="px-5 py-3.5">
-                <StatusBadge status={job.status} />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
 
 export default async function RecruiterDashboard(): Promise<JSX.Element> {
   const token = readAccessToken();
@@ -143,7 +65,7 @@ export default async function RecruiterDashboard(): Promise<JSX.Element> {
             {error}
           </div>
         ) : (
-          <JobsTable jobs={jobs} />
+          <RecruiterJobsView jobs={jobs} />
         )}
       </div>
     </section>

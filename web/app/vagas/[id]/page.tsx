@@ -1,7 +1,9 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ApiError, fetchJob } from '@/lib/api';
 import { ArrowIcon, WorkModelBadge } from '@/components/job-ui';
+import { formatLongDate } from '@/lib/format';
 import {
   EMPLOYMENT_LABEL,
   WORK_MODEL_LABEL,
@@ -9,6 +11,22 @@ import {
 } from '@/lib/types';
 
 export const revalidate = 60;
+
+export async function generateMetadata({
+  params,
+}: {
+  readonly params: { id: string };
+}): Promise<Metadata> {
+  try {
+    const job = await fetchJob(params.id);
+    return {
+      title: `${job.title} — Carreiras ASCENDA`,
+      description: job.description.replace(/\s+/g, ' ').slice(0, 155),
+    };
+  } catch {
+    return { title: 'Vaga — Carreiras ASCENDA' };
+  }
+}
 
 function MetaItem({
   label,
@@ -42,6 +60,8 @@ export default async function JobDetailPage({
     throw err;
   }
 
+  const publishedAt = formatLongDate(job.openedAt);
+
   return (
     <>
       <section className="border-b border-slate-200 bg-gradient-to-br from-brand-700 via-brand-600 to-violet-500">
@@ -59,6 +79,9 @@ export default async function JobDetailPage({
             </h1>
             <WorkModelBadge model={job.workModel} />
           </div>
+          {publishedAt ? (
+            <p className="mt-2 text-sm text-brand-100">Publicada em {publishedAt}</p>
+          ) : null}
         </div>
       </section>
 
