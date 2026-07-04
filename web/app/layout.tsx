@@ -4,8 +4,8 @@ import Link from 'next/link';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Carreiras — ATS ASCENDA',
-  description: 'Vagas abertas e cadastro de candidatos.',
+  title: 'Carreiras — ASCENDA',
+  description: 'Vagas abertas e cadastro de candidatos. Venha crescer com a gente.',
 };
 
 export default function RootLayout({
@@ -15,19 +15,33 @@ export default function RootLayout({
 }): JSX.Element {
   return (
     <html lang="pt-BR">
-      <body className="min-h-screen bg-slate-50 text-slate-900 antialiased">
-        <header className="border-b border-slate-200 bg-white">
-          <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-4">
-            <Link href="/" className="text-lg font-semibold text-brand-700">
-              ASCENDA · Carreiras
+      <body className="min-h-screen bg-slate-50 text-slate-900">
+        <header className="sticky top-0 z-20 border-b border-slate-200/70 bg-white/80 backdrop-blur">
+          <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3.5">
+            <Link href="/" className="flex items-center gap-2.5">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-brand-600 to-violet-500 text-sm font-bold text-white shadow-sm">
+                A
+              </span>
+              <span className="text-[15px] font-semibold tracking-tight text-slate-900">
+                ASCENDA
+                <span className="ml-1.5 font-normal text-slate-400">
+                  Carreiras
+                </span>
+              </span>
             </Link>
-            <span className="text-sm text-slate-500">Empresa Demo</span>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+              Empresa Demo
+            </span>
           </div>
         </header>
-        <div className="mx-auto max-w-4xl px-4 py-8">{children}</div>
-        <footer className="mx-auto max-w-4xl px-4 py-8 text-xs text-slate-400">
-          Seus dados são tratados conforme a LGPD. O consentimento é solicitado no
-          cadastro.
+
+        <main className="min-h-[calc(100vh-8rem)]">{children}</main>
+
+        <footer className="border-t border-slate-200 bg-white">
+          <div className="mx-auto max-w-5xl px-4 py-6 text-xs text-slate-400">
+            Seus dados são tratados conforme a LGPD. O consentimento é solicitado
+            no momento do cadastro.
+          </div>
         </footer>
       </body>
     </html>

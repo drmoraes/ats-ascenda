@@ -2,8 +2,12 @@
 
 import Link from 'next/link';
 import { useState, type FormEvent } from 'react';
+import { ArrowIcon, CheckIcon } from '@/components/job-ui';
 
 type Status = 'idle' | 'submitting' | 'success' | 'error';
+
+const INPUT_CLASS =
+  'mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30';
 
 export function RegistrationForm(): JSX.Element {
   const [fullName, setFullName] = useState('');
@@ -44,19 +48,23 @@ export function RegistrationForm(): JSX.Element {
 
   if (status === 'success') {
     return (
-      <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-6">
-        <p className="text-base font-semibold text-emerald-800">
-          Cadastro enviado com sucesso!
+      <div className="animate-fade-up rounded-2xl border border-emerald-200 bg-emerald-50 p-8 text-center">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+          <CheckIcon className="h-6 w-6" />
+        </div>
+        <p className="mt-4 text-lg font-semibold text-emerald-900">
+          Cadastro enviado!
         </p>
-        <p className="mt-1 text-sm text-emerald-700">
-          Recebemos seus dados. Nossa equipe entrará em contato pelos próximos
-          passos do processo.
+        <p className="mx-auto mt-1 max-w-sm text-sm text-emerald-700">
+          Recebemos seus dados com sucesso. Nossa equipe entrará em contato com os
+          próximos passos do processo.
         </p>
         <Link
           href="/"
-          className="mt-4 inline-block text-sm font-semibold text-emerald-800 hover:underline"
+          className="mt-5 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700"
         >
           Ver outras vagas
+          <ArrowIcon className="h-4 w-4" />
         </Link>
       </div>
     );
@@ -67,7 +75,7 @@ export function RegistrationForm(): JSX.Element {
   return (
     <form
       onSubmit={handleSubmit}
-      className="space-y-5 rounded-xl border border-slate-200 bg-white p-6"
+      className="space-y-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-card sm:p-8"
     >
       <div>
         <label
@@ -84,7 +92,8 @@ export function RegistrationForm(): JSX.Element {
           maxLength={200}
           value={fullName}
           onChange={(e) => setFullName(e.target.value)}
-          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-600 focus:ring-1 focus:ring-brand-600"
+          className={INPUT_CLASS}
+          placeholder="Seu nome"
         />
       </div>
 
@@ -99,33 +108,34 @@ export function RegistrationForm(): JSX.Element {
           maxLength={320}
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-600 focus:ring-1 focus:ring-brand-600"
+          className={INPUT_CLASS}
+          placeholder="voce@email.com"
         />
       </div>
 
       <div>
         <label htmlFor="phone" className="block text-sm font-medium text-slate-700">
-          Telefone <span className="text-slate-400">(opcional)</span>
+          Telefone <span className="font-normal text-slate-400">(opcional)</span>
         </label>
         <input
           id="phone"
           type="tel"
-          placeholder="+5521999998888"
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
-          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-600 focus:ring-1 focus:ring-brand-600"
+          className={INPUT_CLASS}
+          placeholder="+5521999998888"
         />
-        <p className="mt-1 text-xs text-slate-400">
+        <p className="mt-1.5 text-xs text-slate-400">
           Formato internacional (E.164), ex.: +5521999998888.
         </p>
       </div>
 
-      <label className="flex items-start gap-2 text-sm text-slate-600">
+      <label className="flex items-start gap-3 rounded-xl bg-slate-50 p-3.5 text-sm text-slate-600">
         <input
           type="checkbox"
           checked={consent}
           onChange={(e) => setConsent(e.target.checked)}
-          className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-600"
+          className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
         />
         <span>
           Autorizo o tratamento dos meus dados pessoais para fins de participação
@@ -134,7 +144,7 @@ export function RegistrationForm(): JSX.Element {
       </label>
 
       {error ? (
-        <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p className="rounded-xl bg-red-50 px-3.5 py-2.5 text-sm text-red-700 ring-1 ring-inset ring-red-600/10">
           {error}
         </p>
       ) : null}
@@ -142,7 +152,7 @@ export function RegistrationForm(): JSX.Element {
       <button
         type="submit"
         disabled={submitting}
-        className="inline-flex items-center justify-center rounded-lg bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
+        className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
       >
         {submitting ? 'Enviando…' : 'Enviar cadastro'}
       </button>
