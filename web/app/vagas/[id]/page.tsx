@@ -12,6 +12,9 @@ import {
 
 export const revalidate = 60;
 
+const FOCUS =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2';
+
 export async function generateMetadata({
   params,
 }: {
@@ -61,6 +64,10 @@ export default async function JobDetailPage({
   }
 
   const publishedAt = formatLongDate(job.openedAt);
+  const applyHref = {
+    pathname: '/candidatar',
+    query: { vaga: job.id, titulo: job.title },
+  };
 
   return (
     <>
@@ -68,7 +75,7 @@ export default async function JobDetailPage({
         <div className="mx-auto max-w-3xl px-4 py-10 sm:py-12">
           <Link
             href="/"
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-100 transition hover:text-white"
+            className={`inline-flex items-center gap-1.5 rounded text-sm font-medium text-indigo-100 transition hover:text-white ${FOCUS}`}
           >
             <ArrowIcon className="h-4 w-4 rotate-180" />
             Voltar às vagas
@@ -80,12 +87,21 @@ export default async function JobDetailPage({
             <WorkModelBadge model={job.workModel} />
           </div>
           {publishedAt ? (
-            <p className="mt-2 text-sm text-brand-100">Publicada em {publishedAt}</p>
+            <p className="mt-2 text-sm text-white/80">Publicada em {publishedAt}</p>
           ) : null}
+
+          {/* CTA primário visível na entrada (sem precisar rolar). */}
+          <Link
+            href={applyHref}
+            className={`mt-5 inline-flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-100 ${FOCUS}`}
+          >
+            Candidatar-se
+            <ArrowIcon className="h-4 w-4" />
+          </Link>
         </div>
       </section>
 
-      <section className="mx-auto max-w-3xl px-4 py-8">
+      <section className="mx-auto max-w-3xl px-4 py-8 pb-24 sm:pb-10">
         <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <MetaItem label="Área" value={job.department ?? '—'} />
           <MetaItem label="Local" value={job.location ?? '—'} />
@@ -102,7 +118,7 @@ export default async function JobDetailPage({
           </div>
         </article>
 
-        <div className="mt-8 flex flex-col items-center gap-3 rounded-2xl bg-slate-900 px-6 py-8 text-center">
+        <div className="mt-8 hidden flex-col items-center gap-3 rounded-2xl bg-slate-900 px-6 py-8 text-center sm:flex">
           <p className="text-base font-semibold text-white">
             Interessou? Candidate-se agora.
           </p>
@@ -111,17 +127,25 @@ export default async function JobDetailPage({
             consentimento para o processo.
           </p>
           <Link
-            href={{
-              pathname: '/candidatar',
-              query: { vaga: job.id, titulo: job.title },
-            }}
-            className="mt-2 inline-flex items-center gap-2 rounded-xl bg-white px-6 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-100"
+            href={applyHref}
+            className={`mt-2 inline-flex items-center gap-2 rounded-xl bg-white px-6 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-100 ${FOCUS}`}
           >
             Candidatar-se
             <ArrowIcon className="h-4 w-4" />
           </Link>
         </div>
       </section>
+
+      {/* Barra de ação fixa no mobile — CTA sempre acessível. */}
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 p-3 backdrop-blur sm:hidden">
+        <Link
+          href={applyHref}
+          className={`flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 px-5 py-3 text-sm font-semibold text-white ${FOCUS}`}
+        >
+          Candidatar-se
+          <ArrowIcon className="h-4 w-4" />
+        </Link>
+      </div>
     </>
   );
 }

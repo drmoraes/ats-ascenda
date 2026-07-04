@@ -18,13 +18,16 @@ export default function RootLayout({
       <body className="min-h-screen bg-slate-50 text-slate-900">
         <header className="sticky top-0 z-20 border-b border-slate-200/70 bg-white/80 backdrop-blur">
           <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3.5">
-            <Link href="/" className="flex items-center gap-2.5">
+            <Link
+              href="/"
+              className="flex items-center gap-2.5 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
+            >
               <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-brand-600 to-violet-500 text-sm font-bold text-white shadow-sm">
                 A
               </span>
               <span className="text-[15px] font-semibold tracking-tight text-slate-900">
                 ASCENDA
-                <span className="ml-1.5 font-normal text-slate-400">
+                <span className="ml-1.5 font-normal text-slate-500">
                   Carreiras
                 </span>
               </span>
@@ -45,7 +48,7 @@ export default function RootLayout({
             </span>
             <Link
               href="/recrutador/login"
-              className="font-medium text-slate-500 transition hover:text-brand-600"
+              className="rounded font-medium text-slate-500 transition hover:text-brand-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
             >
               Área do recrutador →
             </Link>
