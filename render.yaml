@@ -87,3 +87,23 @@ services:
         value: xforwarded
       - key: JAVA_OPTS_APPEND
         value: "-Xms64m -Xmx320m"
+
+  # --- Frontend público do candidato (Next.js) ---
+  # SSR: o servidor Next busca da API (server-to-server, sem CORS). rootDir
+  # isola o build na pasta /web; o backend ignora /web via .dockerignore.
+  - type: web
+    name: ats-web
+    runtime: node
+    plan: free
+    rootDir: web
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      # URL pública da API já no ar. Ajuste se o nome do serviço mudar.
+      - key: API_URL
+        value: https://ats-api-kr6c.onrender.com
+      - key: TENANT_SLUG
+        value: demo
