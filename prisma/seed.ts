@@ -1,16 +1,16 @@
-import { PrismaClient, type JobStatus } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 
 /**
- * Seed idempotente e RICO para a demo. Roda como superusuário
- * (ADMIN_DATABASE_URL / dono das tabelas no Render), fora do RLS.
+ * Seed idempotente e RICO para a demo. Roda como dono das tabelas (não
+ * superusuário no Render), portanto SUJEITO ao RLS (FORCE ROW LEVEL SECURITY).
  *
- * Idempotência por entidade: tenant/usuário via findFirst; vagas via título.
- * Rodar de novo não duplica — só cria o que ainda falta. Isso permite
- * enriquecer a base num deploy posterior sem resetar o banco.
+ * Como o RLS persiste entre deploys, todas as escritas em tabelas com tenant
+ * precisam rodar dentro de uma transação que fixa `app.current_tenant` — mesmo
+ * padrão do PrismaService.withTenant da aplicação. A tabela `tenants` NÃO está
+ * sob RLS, então é criada fora do contexto.
  *
- * O tenant usa um UUID FIXO que coincide com o atributo `tenant_id` do
- * usuário no Keycloak (docker/keycloak-realm.json), para o fluxo do
- * recrutador funcionar ponta a ponta.
+ * Idempotência por entidade: tenant/usuário e vagas (por título) são criados
+ * só se ainda não existirem. Rodar de novo não duplica.
  */
 const TENANT_ID = '11111111-1111-1111-1111-111111111111';
 
@@ -26,6 +26,8 @@ const DEFAULT_STAGES = [
 
 type EmploymentType = 'CLT' | 'PJ' | 'ESTAGIO' | 'TEMPORARIO';
 type WorkModel = 'PRESENCIAL' | 'HIBRIDO' | 'REMOTO';
+type JobStatusLit = 'DRAFT' | 'OPEN' | 'ON_HOLD' | 'CLOSED' | 'CANCELLED';
+type AppStatusLit = 'IN_PROGRESS' | 'HIRED' | 'REJECTED';
 
 interface JobSeed {
   readonly title: string;
@@ -33,9 +35,8 @@ interface JobSeed {
   readonly location: string;
   readonly employmentType: EmploymentType;
   readonly workModel: WorkModel;
-  readonly status: JobStatus;
+  readonly status: JobStatusLit;
   readonly description: string;
-  /** Quantos candidatos gerar para esta vaga (0 para rascunho). */
   readonly candidates: number;
 }
 
@@ -219,12 +220,24 @@ const LAST_NAMES = [
   'Nunes', 'Cardoso', 'Teixeira', 'Moraes', 'Dias', 'Freitas',
 ];
 const SOURCES = ['LinkedIn', 'Indeed', 'Indicação', 'Site de carreiras', 'Gupy'];
-// Estágios não-terminais (Inscrito..Proposta) recebem candidatos ativos.
 const ACTIVE_STAGES = ['Inscrito', 'Triagem', 'Entrevista RH', 'Entrevista Gestor', 'Proposta'];
 
 const prisma = new PrismaClient();
 
-/** Gerador pseudoaleatório determinístico (mesma base a cada deploy). */
+/** Executa dentro do contexto de tenant (respeita o RLS). Timeout estendido
+ *  para o Postgres free, que é lento no boot. */
+function withTenant<T>(
+  fn: (tx: Prisma.TransactionClient) => Promise<T>,
+): Promise<T> {
+  return prisma.$transaction(
+    async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.current_tenant', ${TENANT_ID}, true)`;
+      return fn(tx);
+    },
+    { maxWait: 20000, timeout: 120000 },
+  );
+}
+
 function seededScore(n: number): number {
   const x = Math.sin(n * 12.9898) * 43758.5453;
   const frac = x - Math.floor(x);
@@ -232,130 +245,137 @@ function seededScore(n: number): number {
 }
 
 async function ensureTenantAndUser(): Promise<void> {
+  // `tenants` não está sob RLS — pode criar fora do contexto.
   const tenant = await prisma.tenant.findFirst({ where: { id: TENANT_ID } });
   if (!tenant) {
     await prisma.tenant.create({
       data: { id: TENANT_ID, name: 'Empresa Demo', slug: 'demo', status: 'ACTIVE' },
     });
   }
-  const user = await prisma.user.findFirst({
-    where: { tenantId: TENANT_ID, email: 'recrutador@demo.com' },
-  });
-  if (!user) {
-    await prisma.user.create({
-      data: {
-        tenantId: TENANT_ID,
-        email: 'recrutador@demo.com',
-        fullName: 'Recrutador Demo',
-        role: 'RECRUITER',
-        status: 'ACTIVE',
-      },
+  // `users` está sob RLS — cria dentro do contexto de tenant.
+  await withTenant(async (tx) => {
+    const user = await tx.user.findFirst({
+      where: { tenantId: TENANT_ID, email: 'recrutador@demo.com' },
     });
-  }
+    if (!user) {
+      await tx.user.create({
+        data: {
+          tenantId: TENANT_ID,
+          email: 'recrutador@demo.com',
+          fullName: 'Recrutador Demo',
+          role: 'RECRUITER',
+          status: 'ACTIVE',
+        },
+      });
+    }
+  });
 }
 
 async function seedJob(job: JobSeed, jobIndex: number): Promise<boolean> {
-  const existing = await prisma.job.findFirst({
-    where: { tenantId: TENANT_ID, title: job.title },
-    select: { id: true },
-  });
-  if (existing) {
-    return false; // idempotente: já criada num run anterior
-  }
+  return withTenant(async (tx) => {
+    const existing = await tx.job.findFirst({
+      where: { tenantId: TENANT_ID, title: job.title },
+      select: { id: true },
+    });
+    if (existing) {
+      return false; // idempotente
+    }
 
-  const opensClosed = job.status === 'OPEN' || job.status === 'ON_HOLD' || job.status === 'CLOSED';
-  const created = await prisma.job.create({
-    data: {
-      tenantId: TENANT_ID,
-      title: job.title,
-      description: job.description,
-      department: job.department,
-      location: job.location,
-      employmentType: job.employmentType,
-      workModel: job.workModel,
-      status: job.status,
-      openedAt: opensClosed ? new Date(Date.now() - (jobIndex + 1) * 86400000) : null,
-      closedAt: job.status === 'CLOSED' ? new Date() : null,
-      pipeline: {
-        create: {
-          tenantId: TENANT_ID,
-          stages: {
-            create: DEFAULT_STAGES.map((s) => ({ tenantId: TENANT_ID, ...s })),
+    const withSla =
+      job.status === 'OPEN' || job.status === 'ON_HOLD' || job.status === 'CLOSED';
+    const created = await tx.job.create({
+      data: {
+        tenantId: TENANT_ID,
+        title: job.title,
+        description: job.description,
+        department: job.department,
+        location: job.location,
+        employmentType: job.employmentType,
+        workModel: job.workModel,
+        status: job.status,
+        openedAt: withSla ? new Date(Date.now() - (jobIndex + 1) * 86400000) : null,
+        closedAt: job.status === 'CLOSED' ? new Date() : null,
+        pipeline: {
+          create: {
+            tenantId: TENANT_ID,
+            stages: {
+              create: DEFAULT_STAGES.map((s) => ({ tenantId: TENANT_ID, ...s })),
+            },
           },
         },
       },
-    },
-    include: { pipeline: { include: { stages: true } } },
+      include: { pipeline: { include: { stages: true } } },
+    });
+
+    const stageByName = new Map<string, string>();
+    for (const stage of created.pipeline?.stages ?? []) {
+      stageByName.set(stage.name, stage.id);
+    }
+
+    for (let i = 0; i < job.candidates; i += 1) {
+      const first = FIRST_NAMES[(jobIndex * 7 + i * 3) % FIRST_NAMES.length];
+      const last = LAST_NAMES[(jobIndex * 5 + i * 2) % LAST_NAMES.length];
+      const fullName = `${first} ${last}`;
+      const email =
+        `${first}.${last}.j${jobIndex}c${i}`.toLowerCase() + '@talentos.demo';
+      const score = seededScore(jobIndex * 100 + i);
+
+      let stageName: string;
+      let status: AppStatusLit;
+      if (job.status === 'CLOSED' && i === 0) {
+        stageName = 'Contratado';
+        status = 'HIRED';
+      } else if (i % 6 === 5) {
+        stageName = 'Reprovado';
+        status = 'REJECTED';
+      } else {
+        stageName = ACTIVE_STAGES[i % ACTIVE_STAGES.length];
+        status = 'IN_PROGRESS';
+      }
+      const stageId = stageByName.get(stageName);
+      if (!stageId) {
+        throw new Error(`Estágio não encontrado no seed: ${stageName}`);
+      }
+
+      const candidate = await tx.candidate.create({
+        data: {
+          tenantId: TENANT_ID,
+          fullName,
+          email,
+          source: SOURCES[(jobIndex + i) % SOURCES.length],
+          consents: {
+            create: [
+              {
+                tenantId: TENANT_ID,
+                purpose: 'RECRUITMENT_PROCESS',
+                legalBasis: 'CONSENT',
+                termsVersion: 'v1',
+                granted: true,
+              },
+            ],
+          },
+        },
+      });
+
+      await tx.application.create({
+        data: {
+          tenantId: TENANT_ID,
+          jobId: created.id,
+          candidateId: candidate.id,
+          currentStageId: stageId,
+          status,
+          matchScore: score,
+          stageHistory: {
+            create: [
+              { tenantId: TENANT_ID, stageId, note: 'Candidatura criada (seed)' },
+            ],
+          },
+        },
+      });
+    }
+
+    return true;
   });
-
-  const stageByName = new Map<string, string>();
-  for (const stage of created.pipeline?.stages ?? []) {
-    stageByName.set(stage.name, stage.id);
-  }
-
-  for (let i = 0; i < job.candidates; i += 1) {
-    const first = FIRST_NAMES[(jobIndex * 7 + i * 3) % FIRST_NAMES.length];
-    const last = LAST_NAMES[(jobIndex * 5 + i * 2) % LAST_NAMES.length];
-    const fullName = `${first} ${last}`;
-    const email = `${first}.${last}.j${jobIndex}c${i}`.toLowerCase() + '@talentos.demo';
-    const score = seededScore(jobIndex * 100 + i);
-
-    // Distribuição: fecha 1 contratado; o resto nos estágios ativos.
-    let stageName: string;
-    let status: 'IN_PROGRESS' | 'HIRED' | 'REJECTED';
-    if (job.status === 'CLOSED' && i === 0) {
-      stageName = 'Contratado';
-      status = 'HIRED';
-    } else if (i % 6 === 5) {
-      stageName = 'Reprovado';
-      status = 'REJECTED';
-    } else {
-      stageName = ACTIVE_STAGES[i % ACTIVE_STAGES.length];
-      status = 'IN_PROGRESS';
-    }
-    const stageId = stageByName.get(stageName);
-    if (!stageId) {
-      throw new Error(`Estágio não encontrado no seed: ${stageName}`);
-    }
-
-    const candidate = await prisma.candidate.create({
-      data: {
-        tenantId: TENANT_ID,
-        fullName,
-        email,
-        source: SOURCES[(jobIndex + i) % SOURCES.length],
-        consents: {
-          create: [
-            {
-              tenantId: TENANT_ID,
-              purpose: 'RECRUITMENT_PROCESS',
-              legalBasis: 'CONSENT',
-              termsVersion: 'v1',
-              granted: true,
-            },
-          ],
-        },
-      },
-    });
-
-    await prisma.application.create({
-      data: {
-        tenantId: TENANT_ID,
-        jobId: created.id,
-        candidateId: candidate.id,
-        currentStageId: stageId,
-        status,
-        matchScore: score,
-        stageHistory: {
-          create: [
-            { tenantId: TENANT_ID, stageId, note: 'Candidatura criada (seed)' },
-          ],
-        },
-      },
-    });
-  }
-
-  return true;
 }
 
 async function main(): Promise<void> {
@@ -374,7 +394,7 @@ async function main(): Promise<void> {
 
   // eslint-disable-next-line no-console
   console.log(
-    `[seed] concluído: +${createdJobs} vagas novas, +${createdCandidates} candidatos (idempotente).`,
+    `[seed] concluído: +${createdJobs} vagas novas, +${createdCandidates} candidatos (idempotente, com RLS).`,
   );
 }
 
