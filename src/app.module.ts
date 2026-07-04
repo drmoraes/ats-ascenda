@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { PrismaModule } from './common/prisma/prisma.module';
+import { TenancyModule } from './common/tenancy/tenancy.module';
 import { TenantContextMiddleware } from './common/tenancy/tenant-context.middleware';
 import { AuthModule } from './modules/auth/auth.module';
 import { AuthMiddleware } from './modules/auth/auth.middleware';
@@ -21,6 +22,7 @@ import { HealthModule } from './modules/health/health.module';
 @Module({
   imports: [
     PrismaModule,
+    TenancyModule,
     AuthModule,
     NotificationsModule,
     HealthModule,

@@ -10,7 +10,6 @@ import { ResumeParsingService } from './resume-parsing.service';
 import { ResumeParsingProcessor } from './resume-parsing.processor';
 import { CandidatesService } from './candidates.service';
 import { CandidatesRepository } from './candidates.repository';
-import { TenantResolverService } from './tenant-resolver.service';
 import {
   REDIS_CONNECTION,
   RESUME_PARSING_QUEUE,
@@ -34,7 +33,7 @@ import {
     ResumeParsingProcessor,
     CandidatesService,
     CandidatesRepository,
-    TenantResolverService,
+    // TenantResolverService agora vem do TenancyModule (@Global).
     {
       provide: REDIS_CONNECTION,
       useFactory: (): Redis => createRedisConnection(),

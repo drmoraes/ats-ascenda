@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { JobStatus } from '@prisma/client';
+import { EmploymentType, JobStatus, WorkModel } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ResourceNotFoundError } from '../../common/errors/domain-error';
 import { TenantContext } from '../../common/tenancy/tenant-context';
@@ -17,6 +17,22 @@ export interface JobRecord {
   readonly location: string | null;
   readonly openedAt: Date | null;
   readonly closedAt: Date | null;
+}
+
+/**
+ * Projeção pública de vaga (página de carreira). Expõe apenas o que um
+ * candidato anônimo pode ver: nunca `status`, `ownerId`, `tenantId` ou
+ * timestamps internos. Somente vagas OPEN são materializadas nesta view.
+ */
+export interface PublicJobView {
+  readonly id: string;
+  readonly title: string;
+  readonly description: string;
+  readonly department: string | null;
+  readonly location: string | null;
+  readonly employmentType: EmploymentType;
+  readonly workModel: WorkModel;
+  readonly openedAt: Date | null;
 }
 
 /**
@@ -126,6 +142,37 @@ export class JobsRepository {
     );
   }
 
+  /**
+   * Vagas públicas: apenas OPEN e não excluídas, do tenant corrente (RLS).
+   * Ordenadas da mais recentemente aberta para a mais antiga.
+   */
+  public async listPublicOpen(): Promise<readonly PublicJobView[]> {
+    return this.prisma.withTenant((tx) =>
+      tx.job.findMany({
+        where: { status: JobStatus.OPEN, deletedAt: null },
+        orderBy: { openedAt: 'desc' },
+        select: this.publicSelection(),
+      }),
+    );
+  }
+
+  /**
+   * Detalhe de uma vaga pública. Só resolve se a vaga estiver OPEN — evita
+   * expor DRAFT/CLOSED/CANCELLED por adivinhação de id.
+   */
+  public async getPublicOpenByIdOrThrow(jobId: string): Promise<PublicJobView> {
+    const job = await this.prisma.withTenant((tx) =>
+      tx.job.findFirst({
+        where: { id: jobId, status: JobStatus.OPEN, deletedAt: null },
+        select: this.publicSelection(),
+      }),
+    );
+    if (!job) {
+      throw new ResourceNotFoundError('Job', jobId);
+    }
+    return job;
+  }
+
   private selection() {
     return {
       id: true,
@@ -135,6 +182,19 @@ export class JobsRepository {
       location: true,
       openedAt: true,
       closedAt: true,
+    } as const;
+  }
+
+  private publicSelection() {
+    return {
+      id: true,
+      title: true,
+      description: true,
+      department: true,
+      location: true,
+      employmentType: true,
+      workModel: true,
+      openedAt: true,
     } as const;
   }
 }

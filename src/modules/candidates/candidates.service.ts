@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { TenantContext } from '../../common/tenancy/tenant-context';
 import { TokenService } from '../auth/token.service';
 import { CandidatesRepository } from './candidates.repository';
-import { TenantResolverService } from './tenant-resolver.service';
+import { TenantResolverService } from '../../common/tenancy/tenant-resolver.service';
 import {
   parseCandidateRegistration,
   type CandidateRegistrationInput,
