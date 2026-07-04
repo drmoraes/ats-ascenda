@@ -38,9 +38,17 @@ export default function RootLayout({
         <main className="min-h-[calc(100vh-8rem)]">{children}</main>
 
         <footer className="border-t border-slate-200 bg-white">
-          <div className="mx-auto max-w-5xl px-4 py-6 text-xs text-slate-400">
-            Seus dados são tratados conforme a LGPD. O consentimento é solicitado
-            no momento do cadastro.
+          <div className="mx-auto flex max-w-5xl flex-col gap-2 px-4 py-6 text-xs text-slate-400 sm:flex-row sm:items-center sm:justify-between">
+            <span>
+              Seus dados são tratados conforme a LGPD. O consentimento é
+              solicitado no momento do cadastro.
+            </span>
+            <Link
+              href="/recrutador/login"
+              className="font-medium text-slate-500 transition hover:text-brand-600"
+            >
+              Área do recrutador →
+            </Link>
           </div>
         </footer>
       </body>
